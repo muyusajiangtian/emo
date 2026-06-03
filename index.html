@@ -3,14 +3,14 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>语音情绪驱动虚拟头部</title>
+    <title>语音情绪驱动虚拟头部 V2</title>
     <style>
         * { margin: 0; padding: 0; box-sizing: border-box; }
         html, body { height: 100%; overflow: hidden; font-family: 'Microsoft YaHei', sans-serif; background: #1a1a2e; color: #eee; }
 
         #app {
             display: grid;
-            grid-template-columns: 1fr 320px;
+            grid-template-columns: 1fr 340px;
             height: 100vh;
             min-height: 0;
         }
@@ -22,11 +22,22 @@
             overflow: hidden;
         }
 
+        #model-status {
+            position: absolute;
+            top: 12px;
+            left: 12px;
+            font-size: 11px;
+            color: #888;
+            background: rgba(0,0,0,0.5);
+            padding: 4px 8px;
+            border-radius: 4px;
+        }
+
         #ui-panel {
             display: flex;
             flex-direction: column;
-            gap: 12px;
-            padding: 16px;
+            gap: 10px;
+            padding: 14px;
             background: #16213e;
             border-left: 1px solid #0f3460;
             overflow-y: auto;
@@ -34,10 +45,11 @@
         }
 
         /* 控制按钮 */
-        .controls { display: flex; gap: 8px; flex-shrink: 0; }
+        .controls { display: flex; gap: 6px; flex-shrink: 0; flex-wrap: wrap; }
         .controls button {
-            flex: 1; padding: 10px; border: none; border-radius: 6px;
-            font-size: 13px; font-weight: bold; cursor: pointer; transition: 0.2s;
+            flex: 1; padding: 8px 4px; border: none; border-radius: 6px;
+            font-size: 12px; font-weight: bold; cursor: pointer; transition: 0.2s;
+            min-width: 60px;
         }
         #start-btn { background: #1e3a5f; color: #4cdf6e; border: 2px solid #4cdf6e; }
         #start-btn:hover:not(:disabled) { background: #4cdf6e; color: #000; }
@@ -45,60 +57,175 @@
         #stop-btn:hover:not(:disabled) { background: #e94560; color: #fff; }
         button:disabled { opacity: 0.3; cursor: not-allowed; }
 
+        /* 模式切换 */
+        .mode-switch { display: flex; gap: 4px; }
+        .mode-switch button {
+            flex: 1; padding: 7px; border: 2px solid #333; border-radius: 6px;
+            background: #0a1628; color: #888; font-size: 11px; font-weight: bold;
+            cursor: pointer; transition: 0.2s;
+        }
+        .mode-switch button.active {
+            border-color: #53a8b6; color: #53a8b6; background: #0f2a3f;
+        }
+
         /* 电平条 */
         #level-container { flex-shrink: 0; }
         #level-container label { font-size: 11px; color: #888; }
         #level-bar-bg {
-            width: 100%; height: 10px; background: #0a1628; border-radius: 5px;
+            width: 100%; height: 8px; background: #0a1628; border-radius: 4px;
             overflow: hidden; margin-top: 4px;
         }
         #level-bar {
-            height: 100%; width: 0%; border-radius: 5px;
+            height: 100%; width: 0%; border-radius: 4px;
             background: linear-gradient(90deg, #4cdf6e 0%, #ffd700 60%, #e94560 100%);
             transition: width 50ms linear;
         }
 
-        /* 情绪显示 */
-        .card { background: #0f3460; border-radius: 10px; padding: 14px; flex-shrink: 0; }
-        .card h3 { font-size: 11px; color: #666; text-transform: uppercase; margin-bottom: 8px; letter-spacing: 1px; }
+        /* 卡片 */
+        .card { background: #0f3460; border-radius: 8px; padding: 12px; flex-shrink: 0; }
+        .card h3 { font-size: 10px; color: #666; text-transform: uppercase; margin-bottom: 6px; letter-spacing: 1px; }
+
+        /* 情绪 */
         #emotion-label {
-            font-size: 26px; font-weight: bold; text-align: center; padding: 6px 0;
+            font-size: 24px; font-weight: bold; text-align: center; padding: 4px 0;
             transition: color 0.4s;
         }
-        #emotion-status { font-size: 11px; color: #888; text-align: center; margin-top: 4px; }
+        #emotion-status { font-size: 11px; color: #888; text-align: center; margin-top: 3px; }
+
+        /* VAD */
+        .vad-row { display: flex; align-items: center; gap: 8px; margin-top: 6px; }
+        .vad-row label { font-size: 11px; color: #aaa; white-space: nowrap; }
+        .vad-row input[type="range"] { flex: 1; height: 4px; }
+        #vad-val { font-size: 11px; color: #53a8b6; font-weight: bold; min-width: 30px; }
+        #vad-indicator {
+            display: inline-block; padding: 3px 10px; border-radius: 10px;
+            font-size: 11px; font-weight: bold; margin-top: 6px; transition: 0.3s;
+        }
+        .vad-speaking { background: #4cdf6e22; color: #4cdf6e; border: 1px solid #4cdf6e; }
+        .vad-silent { background: #33333344; color: #666; border: 1px solid #333; }
+
+        /* 音素 */
+        .viseme-current {
+            font-size: 20px; font-weight: bold; text-align: center;
+            color: #ffd700; margin-bottom: 8px;
+        }
+        .viseme-bars { display: flex; gap: 6px; align-items: flex-end; height: 40px; }
+        .vbar {
+            flex: 1; display: flex; flex-direction: column; align-items: center;
+            height: 100%; position: relative;
+        }
+        .vbar span { font-size: 9px; color: #888; position: absolute; bottom: -14px; }
+        .vbar-bg {
+            width: 100%; flex: 1; background: #0a1628; border-radius: 3px;
+            overflow: hidden; position: relative;
+        }
+        .vbar-fill {
+            position: absolute; bottom: 0; width: 100%; border-radius: 3px;
+            background: linear-gradient(to top, #53a8b6, #4cdf6e);
+            transition: height 80ms linear;
+            height: 0%;
+        }
+
+        /* 录制 */
+        #rec-btn { background: #1e3a5f; color: #ff6b6b; border: 2px solid #ff6b6b; }
+        #rec-btn:hover:not(:disabled) { background: #ff6b6b; color: #fff; }
+        #rec-btn.recording { background: #ff6b6b; color: #fff; animation: pulse 1s infinite; }
+        #play-btn { background: #1e3a5f; color: #53a8b6; border: 2px solid #53a8b6; }
+        #play-btn:hover:not(:disabled) { background: #53a8b6; color: #000; }
+        #stop-play-btn { background: #1e3a5f; color: #aaa; border: 2px solid #555; }
+        #stop-play-btn:hover:not(:disabled) { background: #555; color: #fff; }
+        #rec-status { font-size: 11px; color: #888; margin-top: 6px; text-align: center; }
+
+        @keyframes pulse {
+            0%, 100% { opacity: 1; }
+            50% { opacity: 0.7; }
+        }
 
         /* 特征值 */
-        .feat-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; }
-        .feat-item { display: flex; justify-content: space-between; font-size: 12px; padding: 4px 0; border-bottom: 1px solid #1a1a3e; }
+        .feat-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 4px; }
+        .feat-item { display: flex; justify-content: space-between; font-size: 11px; padding: 3px 0; border-bottom: 1px solid #1a1a3e; }
         .feat-item span:last-child { color: #53a8b6; font-weight: bold; font-family: monospace; }
 
         /* 波形 */
-        .canvas-wrap canvas { width: 100%; height: 70px; display: block; background: #0a1628; border-radius: 6px; margin-bottom: 8px; }
+        .canvas-wrap canvas { width: 100%; height: 55px; display: block; background: #0a1628; border-radius: 5px; margin-bottom: 6px; }
 
-        /* 响应式：窄屏改为上下布局 */
+        /* 响应式 */
         @media (max-width: 700px) {
             #app { grid-template-columns: 1fr; grid-template-rows: 1fr auto; }
-            #ui-panel { max-height: 40vh; border-left: none; border-top: 1px solid #0f3460; }
+            #ui-panel { max-height: 45vh; border-left: none; border-top: 1px solid #0f3460; }
         }
     </style>
 </head>
 <body>
 <div id="app">
-    <div id="scene-container"></div>
+    <div id="scene-container">
+        <div id="model-status">加载模型中...</div>
+    </div>
     <div id="ui-panel">
+        <!-- 主控制 -->
         <div class="controls">
             <button id="start-btn">开始录音</button>
             <button id="stop-btn" disabled>停止录音</button>
         </div>
+
+        <!-- 模式切换 -->
+        <div class="card">
+            <h3>驱动模式 / Mode</h3>
+            <div class="mode-switch">
+                <button id="mode-realtime" class="active">实时 Realtime</button>
+                <button id="mode-sentence">句子 Sentence</button>
+            </div>
+        </div>
+
+        <!-- 电平 -->
         <div id="level-container">
             <label>输入电平</label>
             <div id="level-bar-bg"><div id="level-bar"></div></div>
         </div>
+
+        <!-- VAD -->
         <div class="card">
-            <h3>当前情绪</h3>
+            <h3>语音检测 / VAD</h3>
+            <div class="vad-row">
+                <label>灵敏度:</label>
+                <input type="range" id="vad-slider" min="0" max="100" value="50">
+                <span id="vad-val">50%</span>
+            </div>
+            <div id="vad-indicator" class="vad-silent">静默 Silent</div>
+        </div>
+
+        <!-- 情绪 -->
+        <div class="card">
+            <h3>当前情绪 / Emotion</h3>
             <div id="emotion-label">--</div>
             <div id="emotion-status">等待启动</div>
         </div>
+
+        <!-- 音素 -->
+        <div class="card">
+            <h3>音素/口型 / Phoneme</h3>
+            <div class="viseme-current" id="viseme-label">--</div>
+            <div class="viseme-bars">
+                <div class="vbar"><div class="vbar-bg"><div class="vbar-fill" id="vb-aa"></div></div><span>AA</span></div>
+                <div class="vbar"><div class="vbar-bg"><div class="vbar-fill" id="vb-iy"></div></div><span>IY</span></div>
+                <div class="vbar"><div class="vbar-bg"><div class="vbar-fill" id="vb-uw"></div></div><span>UW</span></div>
+                <div class="vbar"><div class="vbar-bg"><div class="vbar-fill" id="vb-ow"></div></div><span>OW</span></div>
+                <div class="vbar"><div class="vbar-bg"><div class="vbar-fill" id="vb-mbp"></div></div><span>MBP</span></div>
+            </div>
+        </div>
+
+        <!-- 录制/回放 -->
+        <div class="card">
+            <h3>录制测试 / Record</h3>
+            <div class="controls">
+                <button id="rec-btn">录制</button>
+                <button id="play-btn" disabled>播放</button>
+                <button id="stop-play-btn" disabled>停止</button>
+            </div>
+            <div id="rec-status">就绪 Ready</div>
+        </div>
+
+        <!-- 音频特征 -->
         <div class="card">
             <h3>音频特征</h3>
             <div class="feat-grid">
@@ -112,15 +239,17 @@
                 <div class="feat-item"><span>音高Hz</span><span id="f-pitch">--</span></div>
             </div>
         </div>
+
+        <!-- 波形/频谱 -->
         <div class="card canvas-wrap">
-            <h3>波形</h3>
+            <h3>波形 / 频谱</h3>
             <canvas id="waveform-canvas"></canvas>
-            <h3>频谱</h3>
             <canvas id="spectrum-canvas"></canvas>
         </div>
     </div>
 </div>
 <script src="lib/three.min.js"></script>
+<script src="lib/GLTFLoader.js"></script>
 <script type="module" src="js/main.js"></script>
 </body>
 </html>

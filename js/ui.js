@@ -1,11 +1,12 @@
 /**
- * UI管理 - 情绪标签 + 波形/频谱 + 电平条
+ * UI管理 - 情绪/音素/VAD/波形/频谱/录制状态
  */
 export class UIManager {
     constructor() {
         this.elEmotion = document.getElementById('emotion-label');
         this.elStatus = document.getElementById('emotion-status');
         this.elLevel = document.getElementById('level-bar');
+        this.elModelStatus = document.getElementById('model-status');
         this.els = {
             energy: document.getElementById('f-energy'),
             loudness: document.getElementById('f-loudness'),
@@ -23,8 +24,39 @@ export class UIManager {
         this._fixCanvasSize(this.waveCanvas, this.waveCtx);
         this._fixCanvasSize(this.specCanvas, this.specCtx);
 
-        this.emotionText = { happy: '高兴', sad: '悲伤', angry: '生气', neutral: '中性' };
+        // VAD
+        this.elVadIndicator = document.getElementById('vad-indicator');
+        this.elVadSlider = document.getElementById('vad-slider');
+        this.elVadVal = document.getElementById('vad-val');
+
+        // 音素
+        this.elVisemeLabel = document.getElementById('viseme-label');
+        this.visemeBars = {
+            AA: document.getElementById('vb-aa'),
+            IY: document.getElementById('vb-iy'),
+            UW: document.getElementById('vb-uw'),
+            OW: document.getElementById('vb-ow'),
+            MBP: document.getElementById('vb-mbp'),
+        };
+
+        // 录制
+        this.elRecStatus = document.getElementById('rec-status');
+
+        // 模式
+        this.elModeRealtime = document.getElementById('mode-realtime');
+        this.elModeSentence = document.getElementById('mode-sentence');
+
+        this.emotionText = { happy: '高兴 Happy', sad: '悲伤 Sad', angry: '生气 Angry', neutral: '中性 Neutral' };
         this.emotionColor = { happy: '#ffd700', sad: '#6495ed', angry: '#ff4444', neutral: '#aaa' };
+
+        this.visemeText = {
+            'AA': 'AA (开口)',
+            'IY': 'IY (微笑)',
+            'UW': 'UW (嘟嘴)',
+            'OW': 'OW (圆口)',
+            'MBP': 'MBP (闭口)',
+            'silence': '-- (静默)',
+        };
     }
 
     _fixCanvasSize(canvas, ctx) {
@@ -43,6 +75,10 @@ export class UIManager {
         this.elStatus.textContent = msg;
     }
 
+    setModelStatus(msg) {
+        this.elModelStatus.textContent = msg;
+    }
+
     updateEmotion(result) {
         if (!result) return;
         const { emotion, confidence } = result;
@@ -51,6 +87,41 @@ export class UIManager {
         if (!result.calibrating) {
             this.elStatus.textContent = `置信度 ${Math.round((confidence || 0) * 100)}%`;
         }
+    }
+
+    updateVAD(vad) {
+        if (vad.isSpeaking) {
+            this.elVadIndicator.textContent = '说话中 Speaking';
+            this.elVadIndicator.className = 'vad-speaking';
+        } else {
+            this.elVadIndicator.textContent = '静默 Silent';
+            this.elVadIndicator.className = 'vad-silent';
+        }
+    }
+
+    updateViseme(visemeMapper) {
+        const current = visemeMapper.getCurrent();
+        this.elVisemeLabel.textContent = this.visemeText[current] || current;
+
+        const weights = visemeMapper.getWeights();
+        for (const [name, el] of Object.entries(this.visemeBars)) {
+            const w = weights[name] || 0;
+            el.style.height = `${Math.round(w * 100)}%`;
+        }
+    }
+
+    setMode(mode) {
+        if (mode === 'realtime') {
+            this.elModeRealtime.classList.add('active');
+            this.elModeSentence.classList.remove('active');
+        } else {
+            this.elModeRealtime.classList.remove('active');
+            this.elModeSentence.classList.add('active');
+        }
+    }
+
+    setRecStatus(msg) {
+        this.elRecStatus.textContent = msg;
     }
 
     updateFeatures(f) {

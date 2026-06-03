@@ -72,6 +72,13 @@ export class AudioProcessor {
         return { energy, loudness, zcr, centroid, pitch, mfcc };
     }
 
+    /** Float频谱数据（用于Viseme音素分析） */
+    getFloatFrequency() {
+        if (!this.isRunning) return null;
+        this.analyser.getFloatFrequencyData(this._freqBuf);
+        return this._freqBuf;
+    }
+
     /** Uint8频谱用于绘图 */
     getByteFrequency() {
         if (!this.isRunning) return null;
@@ -83,6 +90,11 @@ export class AudioProcessor {
     getWaveform() {
         if (!this.isRunning) return null;
         return this._timeBuf;
+    }
+
+    /** 获取原始MediaStream（用于Recorder） */
+    getStream() {
+        return this.stream;
     }
 
     // --- 内部方法 ---
