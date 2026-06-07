@@ -1,18 +1,21 @@
 /**
  * 音频捕获与特征提取
- * 使用标准Web Audio API AnalyserNode
+ * 扩展版：13维MFCC + 26个Mel滤波器 + 频谱通量
  */
+import { CONFIG } from './config.js';
+
 export class AudioProcessor {
     constructor() {
         this.ctx = null;
         this.analyser = null;
         this.stream = null;
         this.isRunning = false;
-        this.fftSize = 2048;
+        this.fftSize = CONFIG.audio.fftSize;
         this.sampleRate = 44100;
         this._timeBuf = null;
         this._freqBuf = null;
         this._byteFreqBuf = null;
+        this._prevSpectrum = null;
     }
 
     async start() {
@@ -25,15 +28,16 @@ export class AudioProcessor {
             const src = this.ctx.createMediaStreamSource(this.stream);
             this.analyser = this.ctx.createAnalyser();
             this.analyser.fftSize = this.fftSize;
-            this.analyser.smoothingTimeConstant = 0.75;
+            this.analyser.smoothingTimeConstant = CONFIG.audio.smoothingTimeConstant;
             src.connect(this.analyser);
             this._timeBuf = new Float32Array(this.fftSize);
             this._freqBuf = new Float32Array(this.analyser.frequencyBinCount);
             this._byteFreqBuf = new Uint8Array(this.analyser.frequencyBinCount);
+            this._prevSpectrum = new Float32Array(this.analyser.frequencyBinCount);
             this.isRunning = true;
             return true;
         } catch (e) {
-            console.error('麦克风启动失败:', e);
+            console.error('[音频] 麦克风启动失败:', e);
             return false;
         }
     }
@@ -44,7 +48,6 @@ export class AudioProcessor {
         this.isRunning = false;
     }
 
-    /** 峰值电平 0~1 */
     getLevel() {
         if (!this.isRunning) return 0;
         this.analyser.getFloatTimeDomainData(this._timeBuf);
@@ -56,7 +59,6 @@ export class AudioProcessor {
         return Math.min(peak, 1);
     }
 
-    /** 获取全部特征 */
     getFeatures() {
         if (!this.isRunning) return null;
         this.analyser.getFloatTimeDomainData(this._timeBuf);
@@ -68,36 +70,25 @@ export class AudioProcessor {
         const centroid = this._spectralCentroid();
         const pitch = this._pitch();
         const mfcc = this._mfcc();
+        const spectralFlux = this._spectralFlux();
 
-        return { energy, loudness, zcr, centroid, pitch, mfcc };
+        return { energy, loudness, zcr, centroid, pitch, mfcc, spectralFlux };
     }
 
-    /** Float频谱数据（用于Viseme音素分析） */
     getFloatFrequency() {
         if (!this.isRunning) return null;
         this.analyser.getFloatFrequencyData(this._freqBuf);
         return this._freqBuf;
     }
 
-    /** Uint8频谱用于绘图 */
     getByteFrequency() {
         if (!this.isRunning) return null;
         this.analyser.getByteFrequencyData(this._byteFreqBuf);
         return this._byteFreqBuf;
     }
 
-    /** 波形数据(Float) */
-    getWaveform() {
-        if (!this.isRunning) return null;
-        return this._timeBuf;
-    }
-
-    /** 获取原始MediaStream（用于Recorder） */
-    getStream() {
-        return this.stream;
-    }
-
-    // --- 内部方法 ---
+    getWaveform() { return this.isRunning ? this._timeBuf : null; }
+    getStream() { return this.stream; }
 
     _energy() {
         let sum = 0;
@@ -107,8 +98,7 @@ export class AudioProcessor {
 
     _loudness(energy) {
         if (energy === undefined) energy = this._energy();
-        const rms = Math.sqrt(energy);
-        return 20 * Math.log10(Math.max(rms, 1e-10));
+        return 20 * Math.log10(Math.max(Math.sqrt(energy), 1e-10));
     }
 
     _zcr() {
@@ -137,30 +127,57 @@ export class AudioProcessor {
         let rms = 0;
         for (let i = 0; i < len; i++) rms += buf[i] * buf[i];
         rms = Math.sqrt(rms / len);
-        if (rms < 0.01) return 0;
+        if (rms < 0.008) return 0;
 
-        const minP = Math.floor(this.sampleRate / 500);
+        // 自相关法检测基频，搜索范围80Hz-600Hz
+        const minP = Math.floor(this.sampleRate / 600);
         const maxP = Math.floor(this.sampleRate / 80);
-        let bestR = -1, bestP = 0;
-        for (let p = minP; p < maxP && p < len / 2; p++) {
-            let c = 0, n1 = 0, n2 = 0;
+        const searchLen = Math.min(maxP + 1, Math.floor(len / 2));
+
+        // NSDF（归一化平方差函数）比纯自相关更准确
+        let bestR = 0, bestP = 0;
+        for (let p = minP; p < searchLen; p++) {
+            let num = 0, den1 = 0, den2 = 0;
             for (let i = 0; i < len - p; i++) {
-                c += buf[i] * buf[i + p];
-                n1 += buf[i] * buf[i];
-                n2 += buf[i + p] * buf[i + p];
+                num += buf[i] * buf[i + p];
+                den1 += buf[i] * buf[i];
+                den2 += buf[i + p] * buf[i + p];
             }
-            const norm = Math.sqrt(n1 * n2);
-            if (norm > 0) c /= norm;
-            if (c > bestR) { bestR = c; bestP = p; }
+            const den = Math.sqrt(den1 * den2);
+            const r = den > 0 ? num / den : 0;
+            if (r > bestR) { bestR = r; bestP = p; }
         }
-        return (bestR > 0.5 && bestP > 0) ? this.sampleRate / bestP : 0;
+
+        // 抛物线插值提高精度
+        if (bestR > 0.4 && bestP > minP && bestP < searchLen - 1) {
+            const calcR = (p) => {
+                let n = 0, d1 = 0, d2 = 0;
+                for (let i = 0; i < len - p; i++) {
+                    n += buf[i] * buf[i + p];
+                    d1 += buf[i] * buf[i];
+                    d2 += buf[i + p] * buf[i + p];
+                }
+                return n / Math.sqrt(d1 * d2 + 1e-10);
+            };
+            const rPrev = calcR(bestP - 1);
+            const rNext = calcR(bestP + 1);
+            const shift = (rPrev - rNext) / (2 * (rPrev - 2 * bestR + rNext));
+            if (Math.abs(shift) < 1) {
+                return this.sampleRate / (bestP + shift);
+            }
+            return this.sampleRate / bestP;
+        }
+        return (bestR > 0.4 && bestP > 0) ? this.sampleRate / bestP : 0;
     }
 
+    /**
+     * 扩展MFCC：13维系数，26个Mel滤波器
+     */
     _mfcc() {
         const freq = this._freqBuf;
         const nBins = freq.length;
-        const nFilters = 20;
-        const nCoeff = 3;
+        const nFilters = CONFIG.audio.melFilters;
+        const nCoeff = CONFIG.audio.mfccCoefficients;
         const lowMel = 0;
         const highMel = 2595 * Math.log10(1 + (this.sampleRate / 2) / 700);
 
@@ -188,5 +205,19 @@ export class AudioProcessor {
             mfcc.push(s);
         }
         return mfcc;
+    }
+
+    /**
+     * 频谱通量（帧间频谱变化率）
+     */
+    _spectralFlux() {
+        const freq = this._freqBuf;
+        let flux = 0;
+        for (let i = 0; i < freq.length; i++) {
+            const diff = freq[i] - this._prevSpectrum[i];
+            flux += diff > 0 ? diff * diff : 0; // 半波整流
+            this._prevSpectrum[i] = freq[i];
+        }
+        return Math.sqrt(flux / freq.length) / 40; // 归一化
     }
 }

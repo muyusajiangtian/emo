@@ -2,6 +2,8 @@
  * 录制与回放模块
  * 录制音频(MediaRecorder) + blendshape动画轨迹，支持同步回放
  */
+import { CONFIG } from './config.js';
+
 export class Recorder {
     constructor() {
         this.isRecording = false;
@@ -14,7 +16,6 @@ export class Recorder {
         this.audioElement = null;
         this.playbackRAF = null;
         this.hasRecording = false;
-
         this.onPlaybackEnd = null;
     }
 
@@ -24,14 +25,13 @@ export class Recorder {
         this.animationTrack = [];
 
         const mimeType = MediaRecorder.isTypeSupported('audio/webm;codecs=opus')
-            ? 'audio/webm;codecs=opus'
-            : 'audio/webm';
+            ? 'audio/webm;codecs=opus' : 'audio/webm';
 
         this.mediaRecorder = new MediaRecorder(stream, { mimeType });
         this.mediaRecorder.ondataavailable = (e) => {
             if (e.data.size > 0) this.audioChunks.push(e.data);
         };
-        this.mediaRecorder.start(100);
+        this.mediaRecorder.start(CONFIG.recorder.chunkIntervalMs);
         this.startTime = performance.now();
         this.isRecording = true;
     }
@@ -53,8 +53,7 @@ export class Recorder {
                     audioBlob: this.audioBlob,
                     trackLength: this.animationTrack.length,
                     duration: this.animationTrack.length > 0
-                        ? this.animationTrack[this.animationTrack.length - 1].time
-                        : 0
+                        ? this.animationTrack[this.animationTrack.length - 1].time : 0
                 });
             };
             this.mediaRecorder.stop();
@@ -73,33 +72,36 @@ export class Recorder {
         const startTime = performance.now();
         const track = this.animationTrack;
         const totalDuration = track[track.length - 1].time;
+        const interpolate = CONFIG.recorder.interpolatePlayback;
 
         const animate = () => {
             if (!this.isPlaying) return;
             const elapsed = performance.now() - startTime;
 
-            // 找到当前帧（二分查找或线性扫描）
             let frameIdx = 0;
             for (let i = 0; i < track.length; i++) {
                 if (track[i].time <= elapsed) frameIdx = i;
                 else break;
             }
 
-            // 线性插值到下一帧
-            const curFrame = track[frameIdx];
-            const nextFrame = track[Math.min(frameIdx + 1, track.length - 1)];
-            if (curFrame && nextFrame && nextFrame.time > curFrame.time) {
-                const t = Math.min((elapsed - curFrame.time) / (nextFrame.time - curFrame.time), 1);
-                const interpolated = {};
-                const allKeys = new Set([...Object.keys(curFrame.weights), ...Object.keys(nextFrame.weights)]);
-                for (const k of allKeys) {
-                    const a = curFrame.weights[k] || 0;
-                    const b = nextFrame.weights[k] || 0;
-                    interpolated[k] = a + (b - a) * t;
+            if (interpolate) {
+                const curFrame = track[frameIdx];
+                const nextFrame = track[Math.min(frameIdx + 1, track.length - 1)];
+                if (curFrame && nextFrame && nextFrame.time > curFrame.time) {
+                    const t = Math.min((elapsed - curFrame.time) / (nextFrame.time - curFrame.time), 1);
+                    const interpolated = {};
+                    const allKeys = new Set([...Object.keys(curFrame.weights), ...Object.keys(nextFrame.weights)]);
+                    for (const k of allKeys) {
+                        const a = curFrame.weights[k] || 0;
+                        const b = nextFrame.weights[k] || 0;
+                        interpolated[k] = a + (b - a) * t;
+                    }
+                    head.setBlendshapes(interpolated);
+                } else if (curFrame) {
+                    head.setBlendshapes(curFrame.weights);
                 }
-                head.setBlendshapes(interpolated);
-            } else if (curFrame) {
-                head.setBlendshapes(curFrame.weights);
+            } else {
+                head.setBlendshapes(track[frameIdx].weights);
             }
 
             if (elapsed < totalDuration + 200) {
@@ -125,12 +127,6 @@ export class Recorder {
             if (this.audioElement.src) URL.revokeObjectURL(this.audioElement.src);
             this.audioElement = null;
         }
-    }
-
-    getProgress(startTime) {
-        if (!this.isPlaying || this.animationTrack.length === 0) return 0;
-        const total = this.animationTrack[this.animationTrack.length - 1].time;
-        return total > 0 ? Math.min((performance.now() - startTime) / total, 1) : 0;
     }
 
     getDuration() {

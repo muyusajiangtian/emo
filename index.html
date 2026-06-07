@@ -3,14 +3,14 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>语音情绪驱动虚拟头部 V2</title>
+    <title>语音情绪虚拟头部 V3 - FACS驱动</title>
     <style>
         * { margin: 0; padding: 0; box-sizing: border-box; }
         html, body { height: 100%; overflow: hidden; font-family: 'Microsoft YaHei', sans-serif; background: #1a1a2e; color: #eee; }
 
         #app {
             display: grid;
-            grid-template-columns: 1fr 340px;
+            grid-template-columns: 1fr 370px;
             height: 100vh;
             min-height: 0;
         }
@@ -28,28 +28,28 @@
             left: 12px;
             font-size: 11px;
             color: #888;
-            background: rgba(0,0,0,0.5);
+            background: rgba(0,0,0,0.6);
             padding: 4px 8px;
             border-radius: 4px;
+            z-index: 10;
         }
 
         #ui-panel {
             display: flex;
             flex-direction: column;
-            gap: 10px;
-            padding: 14px;
+            gap: 8px;
+            padding: 12px;
             background: #16213e;
             border-left: 1px solid #0f3460;
             overflow-y: auto;
             min-height: 0;
         }
 
-        /* 控制按钮 */
         .controls { display: flex; gap: 6px; flex-shrink: 0; flex-wrap: wrap; }
         .controls button {
             flex: 1; padding: 8px 4px; border: none; border-radius: 6px;
             font-size: 12px; font-weight: bold; cursor: pointer; transition: 0.2s;
-            min-width: 60px;
+            min-width: 55px;
         }
         #start-btn { background: #1e3a5f; color: #4cdf6e; border: 2px solid #4cdf6e; }
         #start-btn:hover:not(:disabled) { background: #4cdf6e; color: #000; }
@@ -57,74 +57,52 @@
         #stop-btn:hover:not(:disabled) { background: #e94560; color: #fff; }
         button:disabled { opacity: 0.3; cursor: not-allowed; }
 
-        /* 模式切换 */
         .mode-switch { display: flex; gap: 4px; }
         .mode-switch button {
-            flex: 1; padding: 7px; border: 2px solid #333; border-radius: 6px;
+            flex: 1; padding: 6px; border: 2px solid #333; border-radius: 6px;
             background: #0a1628; color: #888; font-size: 11px; font-weight: bold;
             cursor: pointer; transition: 0.2s;
         }
-        .mode-switch button.active {
-            border-color: #53a8b6; color: #53a8b6; background: #0f2a3f;
-        }
+        .mode-switch button.active { border-color: #53a8b6; color: #53a8b6; background: #0f2a3f; }
 
-        /* 电平条 */
         #level-container { flex-shrink: 0; }
         #level-container label { font-size: 11px; color: #888; }
-        #level-bar-bg {
-            width: 100%; height: 8px; background: #0a1628; border-radius: 4px;
-            overflow: hidden; margin-top: 4px;
-        }
-        #level-bar {
-            height: 100%; width: 0%; border-radius: 4px;
-            background: linear-gradient(90deg, #4cdf6e 0%, #ffd700 60%, #e94560 100%);
-            transition: width 50ms linear;
-        }
+        #level-bar-bg { width: 100%; height: 6px; background: #0a1628; border-radius: 3px; overflow: hidden; margin-top: 3px; }
+        #level-bar { height: 100%; width: 0%; border-radius: 3px; background: linear-gradient(90deg, #4cdf6e, #ffd700, #e94560); transition: width 50ms linear; }
 
-        /* 卡片 */
-        .card { background: #0f3460; border-radius: 8px; padding: 12px; flex-shrink: 0; }
-        .card h3 { font-size: 10px; color: #666; text-transform: uppercase; margin-bottom: 6px; letter-spacing: 1px; }
+        .card { background: #0f3460; border-radius: 8px; padding: 10px; flex-shrink: 0; }
+        .card h3 { font-size: 9px; color: #555; text-transform: uppercase; margin-bottom: 5px; letter-spacing: 1px; }
 
-        /* 情绪 */
-        #emotion-label {
-            font-size: 24px; font-weight: bold; text-align: center; padding: 4px 0;
-            transition: color 0.4s;
-        }
-        #emotion-status { font-size: 11px; color: #888; text-align: center; margin-top: 3px; }
+        #emotion-label { font-size: 20px; font-weight: bold; text-align: center; padding: 2px 0; transition: color 0.4s; }
+        #emotion-status { font-size: 10px; color: #888; text-align: center; margin-top: 2px; }
+
+        #radar-canvas { width: 100%; height: 130px; display: block; }
+
+        /* AU面板 */
+        #au-panel { max-height: 100px; overflow-y: auto; }
+        .au-item { display: flex; align-items: center; gap: 4px; margin-bottom: 3px; font-size: 10px; }
+        .au-name { min-width: 32px; color: #53a8b6; font-weight: bold; font-family: monospace; }
+        .au-bar { flex: 1; height: 6px; background: #0a1628; border-radius: 3px; overflow: hidden; }
+        .au-fill { height: 100%; border-radius: 3px; transition: width 100ms; }
+        .au-desc { color: #888; font-size: 9px; min-width: 50px; }
+        .au-empty { color: #555; font-size: 10px; }
 
         /* VAD */
-        .vad-row { display: flex; align-items: center; gap: 8px; margin-top: 6px; }
-        .vad-row label { font-size: 11px; color: #aaa; white-space: nowrap; }
+        .vad-row { display: flex; align-items: center; gap: 6px; margin-top: 4px; }
+        .vad-row label { font-size: 10px; color: #aaa; white-space: nowrap; }
         .vad-row input[type="range"] { flex: 1; height: 4px; }
-        #vad-val { font-size: 11px; color: #53a8b6; font-weight: bold; min-width: 30px; }
-        #vad-indicator {
-            display: inline-block; padding: 3px 10px; border-radius: 10px;
-            font-size: 11px; font-weight: bold; margin-top: 6px; transition: 0.3s;
-        }
+        #vad-val { font-size: 10px; color: #53a8b6; font-weight: bold; min-width: 28px; }
+        #vad-indicator { display: inline-block; padding: 2px 8px; border-radius: 8px; font-size: 10px; font-weight: bold; margin-top: 4px; transition: 0.3s; }
         .vad-speaking { background: #4cdf6e22; color: #4cdf6e; border: 1px solid #4cdf6e; }
         .vad-silent { background: #33333344; color: #666; border: 1px solid #333; }
 
         /* 音素 */
-        .viseme-current {
-            font-size: 20px; font-weight: bold; text-align: center;
-            color: #ffd700; margin-bottom: 8px;
-        }
-        .viseme-bars { display: flex; gap: 6px; align-items: flex-end; height: 40px; }
-        .vbar {
-            flex: 1; display: flex; flex-direction: column; align-items: center;
-            height: 100%; position: relative;
-        }
-        .vbar span { font-size: 9px; color: #888; position: absolute; bottom: -14px; }
-        .vbar-bg {
-            width: 100%; flex: 1; background: #0a1628; border-radius: 3px;
-            overflow: hidden; position: relative;
-        }
-        .vbar-fill {
-            position: absolute; bottom: 0; width: 100%; border-radius: 3px;
-            background: linear-gradient(to top, #53a8b6, #4cdf6e);
-            transition: height 80ms linear;
-            height: 0%;
-        }
+        .viseme-current { font-size: 14px; font-weight: bold; text-align: center; color: #ffd700; margin-bottom: 5px; }
+        .viseme-bars { display: flex; gap: 2px; align-items: flex-end; height: 30px; flex-wrap: nowrap; }
+        .vbar { flex: 1; display: flex; flex-direction: column; align-items: center; height: 100%; position: relative; min-width: 0; }
+        .vbar span { font-size: 7px; color: #666; position: absolute; bottom: -12px; white-space: nowrap; }
+        .vbar-bg { width: 100%; flex: 1; background: #0a1628; border-radius: 2px; overflow: hidden; position: relative; }
+        .vbar-fill { position: absolute; bottom: 0; width: 100%; border-radius: 2px; background: linear-gradient(to top, #53a8b6, #4cdf6e); transition: height 60ms linear; height: 0%; }
 
         /* 录制 */
         #rec-btn { background: #1e3a5f; color: #ff6b6b; border: 2px solid #ff6b6b; }
@@ -134,25 +112,29 @@
         #play-btn:hover:not(:disabled) { background: #53a8b6; color: #000; }
         #stop-play-btn { background: #1e3a5f; color: #aaa; border: 2px solid #555; }
         #stop-play-btn:hover:not(:disabled) { background: #555; color: #fff; }
-        #rec-status { font-size: 11px; color: #888; margin-top: 6px; text-align: center; }
+        #rec-status { font-size: 10px; color: #888; margin-top: 4px; text-align: center; }
+        @keyframes pulse { 0%,100%{opacity:1} 50%{opacity:0.7} }
 
-        @keyframes pulse {
-            0%, 100% { opacity: 1; }
-            50% { opacity: 0.7; }
-        }
-
-        /* 特征值 */
-        .feat-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 4px; }
-        .feat-item { display: flex; justify-content: space-between; font-size: 11px; padding: 3px 0; border-bottom: 1px solid #1a1a3e; }
+        /* 特征 */
+        .feat-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 2px; }
+        .feat-item { display: flex; justify-content: space-between; font-size: 10px; padding: 2px 0; border-bottom: 1px solid #1a1a3e; }
         .feat-item span:last-child { color: #53a8b6; font-weight: bold; font-family: monospace; }
 
         /* 波形 */
-        .canvas-wrap canvas { width: 100%; height: 55px; display: block; background: #0a1628; border-radius: 5px; margin-bottom: 6px; }
+        .canvas-wrap canvas { width: 100%; height: 45px; display: block; background: #0a1628; border-radius: 4px; margin-bottom: 4px; }
 
-        /* 响应式 */
-        @media (max-width: 700px) {
+        /* 操作说明 */
+        #help-toggle { font-size: 10px; color: #53a8b6; cursor: pointer; text-decoration: underline; margin-bottom: 2px; }
+        #help-content { display: none; font-size: 10px; color: #999; line-height: 1.6; padding: 6px; background: #0a1628; border-radius: 4px; }
+        #help-content b { color: #53a8b6; }
+
+        /* 日志 */
+        #log-panel { max-height: 65px; overflow-y: auto; font-size: 9px; font-family: monospace; padding: 4px; background: #0a0a1a; border-radius: 4px; }
+        .log-entry { padding: 1px 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+
+        @media (max-width: 750px) {
             #app { grid-template-columns: 1fr; grid-template-rows: 1fr auto; }
-            #ui-panel { max-height: 45vh; border-left: none; border-top: 1px solid #0f3460; }
+            #ui-panel { max-height: 50vh; border-left: none; border-top: 1px solid #0f3460; }
         }
     </style>
 </head>
@@ -162,15 +144,26 @@
         <div id="model-status">加载模型中...</div>
     </div>
     <div id="ui-panel">
+        <!-- 操作说明 -->
+        <span id="help-toggle">操作说明 / Help</span>
+        <div id="help-content">
+            <b>1.</b> 点击"开始录音"授权麦克风，系统自动校准基线（约2秒）<br>
+            <b>2.</b> 校准完成后对着麦克风说话，面部会实时响应情绪和嘴型<br>
+            <b>3.</b> 切换"实时/句子"模式：实时逐帧检测，句子模式等完整句子后分析<br>
+            <b>4.</b> 调节VAD灵敏度控制语音检测的灵敏程度<br>
+            <b>5.</b> 点击"录制"可录制音频+动画轨迹，停止后点"播放"回放<br>
+            <b>系统：</b>FACS 43 AU肌肉驱动 | 7种情感混合 | CMU音素嘴型 | 300ms平滑过渡
+        </div>
+
         <!-- 主控制 -->
         <div class="controls">
             <button id="start-btn">开始录音</button>
-            <button id="stop-btn" disabled>停止录音</button>
+            <button id="stop-btn" disabled>停止</button>
         </div>
 
-        <!-- 模式切换 -->
+        <!-- 模式 -->
         <div class="card">
-            <h3>驱动模式 / Mode</h3>
+            <h3>驱动模式</h3>
             <div class="mode-switch">
                 <button id="mode-realtime" class="active">实时 Realtime</button>
                 <button id="mode-sentence">句子 Sentence</button>
@@ -183,6 +176,20 @@
             <div id="level-bar-bg"><div id="level-bar"></div></div>
         </div>
 
+        <!-- 情绪雷达 -->
+        <div class="card">
+            <h3>七情混合 / Emotion Mix</h3>
+            <div id="emotion-label">--</div>
+            <div id="emotion-status">等待启动</div>
+            <canvas id="radar-canvas"></canvas>
+        </div>
+
+        <!-- AU面板 -->
+        <div class="card">
+            <h3>FACS 动作单元 / Active AUs</h3>
+            <div id="au-panel"><span class="au-empty">无活跃AU</span></div>
+        </div>
+
         <!-- VAD -->
         <div class="card">
             <h3>语音检测 / VAD</h3>
@@ -191,41 +198,44 @@
                 <input type="range" id="vad-slider" min="0" max="100" value="50">
                 <span id="vad-val">50%</span>
             </div>
-            <div id="vad-indicator" class="vad-silent">静默 Silent</div>
-        </div>
-
-        <!-- 情绪 -->
-        <div class="card">
-            <h3>当前情绪 / Emotion</h3>
-            <div id="emotion-label">--</div>
-            <div id="emotion-status">等待启动</div>
+            <div id="vad-indicator" class="vad-silent">静默</div>
         </div>
 
         <!-- 音素 -->
         <div class="card">
-            <h3>音素/口型 / Phoneme</h3>
+            <h3>CMU音素 / Phoneme</h3>
             <div class="viseme-current" id="viseme-label">--</div>
             <div class="viseme-bars">
-                <div class="vbar"><div class="vbar-bg"><div class="vbar-fill" id="vb-aa"></div></div><span>AA</span></div>
-                <div class="vbar"><div class="vbar-bg"><div class="vbar-fill" id="vb-iy"></div></div><span>IY</span></div>
-                <div class="vbar"><div class="vbar-bg"><div class="vbar-fill" id="vb-uw"></div></div><span>UW</span></div>
-                <div class="vbar"><div class="vbar-bg"><div class="vbar-fill" id="vb-ow"></div></div><span>OW</span></div>
-                <div class="vbar"><div class="vbar-bg"><div class="vbar-fill" id="vb-mbp"></div></div><span>MBP</span></div>
+                <div class="vbar"><div class="vbar-bg"><div class="vbar-fill" id="vb-sil"></div></div><span>静</span></div>
+                <div class="vbar"><div class="vbar-bg"><div class="vbar-fill" id="vb-PP"></div></div><span>PP</span></div>
+                <div class="vbar"><div class="vbar-bg"><div class="vbar-fill" id="vb-FF"></div></div><span>FF</span></div>
+                <div class="vbar"><div class="vbar-bg"><div class="vbar-fill" id="vb-TH"></div></div><span>TH</span></div>
+                <div class="vbar"><div class="vbar-bg"><div class="vbar-fill" id="vb-DD"></div></div><span>DD</span></div>
+                <div class="vbar"><div class="vbar-bg"><div class="vbar-fill" id="vb-kk"></div></div><span>kk</span></div>
+                <div class="vbar"><div class="vbar-bg"><div class="vbar-fill" id="vb-SS"></div></div><span>SS</span></div>
+                <div class="vbar"><div class="vbar-bg"><div class="vbar-fill" id="vb-SH"></div></div><span>SH</span></div>
+                <div class="vbar"><div class="vbar-bg"><div class="vbar-fill" id="vb-RR"></div></div><span>RR</span></div>
+                <div class="vbar"><div class="vbar-bg"><div class="vbar-fill" id="vb-aa"></div></div><span>aa</span></div>
+                <div class="vbar"><div class="vbar-bg"><div class="vbar-fill" id="vb-E"></div></div><span>E</span></div>
+                <div class="vbar"><div class="vbar-bg"><div class="vbar-fill" id="vb-I"></div></div><span>I</span></div>
+                <div class="vbar"><div class="vbar-bg"><div class="vbar-fill" id="vb-O"></div></div><span>O</span></div>
+                <div class="vbar"><div class="vbar-bg"><div class="vbar-fill" id="vb-U"></div></div><span>U</span></div>
+                <div class="vbar"><div class="vbar-bg"><div class="vbar-fill" id="vb-WW"></div></div><span>WW</span></div>
             </div>
         </div>
 
-        <!-- 录制/回放 -->
+        <!-- 录制 -->
         <div class="card">
-            <h3>录制测试 / Record</h3>
+            <h3>录制回放 / Record</h3>
             <div class="controls">
                 <button id="rec-btn">录制</button>
                 <button id="play-btn" disabled>播放</button>
                 <button id="stop-play-btn" disabled>停止</button>
             </div>
-            <div id="rec-status">就绪 Ready</div>
+            <div id="rec-status">就绪</div>
         </div>
 
-        <!-- 音频特征 -->
+        <!-- 特征 -->
         <div class="card">
             <h3>音频特征</h3>
             <div class="feat-grid">
@@ -245,6 +255,12 @@
             <h3>波形 / 频谱</h3>
             <canvas id="waveform-canvas"></canvas>
             <canvas id="spectrum-canvas"></canvas>
+        </div>
+
+        <!-- 日志 -->
+        <div class="card">
+            <h3>系统日志</h3>
+            <div id="log-panel"></div>
         </div>
     </div>
 </div>
